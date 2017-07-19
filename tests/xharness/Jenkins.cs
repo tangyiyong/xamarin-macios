@@ -72,7 +72,8 @@ namespace xharness
 			if (SimulatorLoadLog == null)
 				SimulatorLoadLog = Logs.CreateStream (LogDirectory, "simulator-list.log", "Simulator Listing");
 			try {
-				await Simulators.LoadAsync (SimulatorLoadLog);
+				if (!buildTask.Ignored)
+					await Simulators.LoadAsync (SimulatorLoadLog);
 			} catch (Exception e) {
 				SimulatorLoadLog.WriteLine ("Failed to load simulators:");
 				SimulatorLoadLog.WriteLine (e.ToString ());
