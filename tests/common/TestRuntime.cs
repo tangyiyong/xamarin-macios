@@ -12,10 +12,12 @@ using Contacts;
 #if MONOMAC
 using AppKit;
 #else
-#if !__TVOS__
+#if !__TVOS__ && !__WATCHOS__
 using AddressBook;
 #endif
+#if !__WATCHOS__
 using MediaPlayer;
+#endif
 using UIKit;
 #endif
 using ObjCRuntime;
@@ -408,7 +410,7 @@ partial class TestRuntime
 		return !string.IsNullOrEmpty (Environment.GetEnvironmentVariable ("DISABLE_SYSTEM_PERMISSION_TESTS"));
 	}
 
-#if !MONOMAC && !__TVOS__
+#if !MONOMAC && !__TVOS__ && !__WATCHOS__
 	public static void RequestCameraPermission (NSString mediaTypeToken, bool assert_granted = false)
 	{
 		if (AVCaptureDevice.GetAuthorizationStatus (mediaTypeToken) == AVAuthorizationStatus.NotDetermined) {
@@ -429,7 +431,7 @@ partial class TestRuntime
 			break;
 		}
 	}
-#endif
+#endif // !!MONOMAC && !__TVOS__ && !__WATCHOS__
 
 #if XAMCORE_2_0 && !__TVOS__
 	public static void CheckContactsPermission (bool assert_granted = false)
@@ -450,7 +452,7 @@ partial class TestRuntime
 	}
 #endif // XAMCORE_2_0
 
-#if !MONOMAC && !__TVOS__
+#if !MONOMAC && !__TVOS__ && !__WATCHOS__
 	public static void CheckAddressBookPermission (bool assert_granted = false)
 	{
 		switch (ABAddressBook.GetAuthorizationStatus ()) {
@@ -467,7 +469,7 @@ partial class TestRuntime
 			break;
 		}
 	}
-#endif // !MONOMAC
+#endif // !MONOMAC && !__TVOS__ && !__WATCHOS__
 
 	public static void RequestMicrophonePermission (bool assert_granted = false)
 	{
@@ -477,6 +479,8 @@ partial class TestRuntime
 		// tvOS doesn't have a (developer-accessible) microphone, but it seems to have API that requires developers 
 		// to request microphone access on other platforms (which means that it makes sense to both run those tests
 		// on tvOS (because the API's there) and to request microphone access (because that's required on other platforms).
+#elif __WATCHOS__
+				// FIXME: Figure out some explanation
 #else
 		if (!CheckXcodeVersion (6, 0))
 			return; // The API to check/request permission isn't available in earlier versions, the dialog will just pop up.
@@ -500,7 +504,7 @@ partial class TestRuntime
 #endif // !MONOMAC && !__TVOS__
 	}
 
-#if !MONOMAC && !__TVOS__
+#if !MONOMAC && !__TVOS__ && !__WATCHOS__
 	public static void RequestMediaLibraryPermission (bool assert_granted = false)
 	{
 		if (MPMediaLibrary.AuthorizationStatus == MPMediaLibraryAuthorizationStatus.NotDetermined) {
