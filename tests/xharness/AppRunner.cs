@@ -284,7 +284,7 @@ namespace xharness
 			if (mode == "watchos")
 				args.Append (" --device ios,watchos");
 
-			return await ProcessHelper.ExecuteCommandAsync (Harness.MlaunchPath, args.ToString (), main_log, TimeSpan.FromMinutes (mode == "watchos" ? 15 : 3));
+			return await ProcessHelper.ExecuteCommandAsync (Harness.MlaunchPath, args.ToString (), main_log, TimeSpan.FromMinutes (mode == "watchos" ? 30 : 3));
 		}
 
 		public async Task<ProcessExecutionResult> UninstallAsync ()
