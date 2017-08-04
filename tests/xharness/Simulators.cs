@@ -600,7 +600,7 @@ namespace xharness
 				case "Watch":
 					return DevicePlatform.watchOS;
 				default:
-					throw new NotImplementedException ();
+					throw new NotImplementedException ($"Unknown device class: {DeviceClass}");
 				}
 			}
 		}
