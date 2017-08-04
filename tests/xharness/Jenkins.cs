@@ -70,26 +70,36 @@ namespace xharness
 			Simulators.Harness = Harness;
 			Devices.Harness = Harness;
 
-			if (SimulatorLoadLog == null)
+			if (SimulatorLoadLog == null) {
 				SimulatorLoadLog = Logs.CreateStream (LogDirectory, "simulator-list.log", "Simulator Listing");
+				SimulatorLoadLog.Timestamp = true;
+			}
 
 			var simulatorLoadTask = Task.Run (async () => {
+				var watch = Stopwatch.StartNew ();
 				try {
 					await Simulators.LoadAsync (SimulatorLoadLog);
 				} catch (Exception e) {
 					SimulatorLoadLog.WriteLine ("Failed to load simulators:");
 					SimulatorLoadLog.WriteLine (e);
+				} finally {
+					SimulatorLoadLog.WriteLine ($"Completed in {watch.Elapsed.TotalSeconds}s");
 				}
 			});
 
-			if (DeviceLoadLog == null)
+			if (DeviceLoadLog == null) {
 				DeviceLoadLog = Logs.CreateStream (LogDirectory, "device-list.log", "Device Listing");
+				DeviceLoadLog.Timestamp = true;
+			}
 			var deviceLoadTask = Task.Run (async () => {
+				var watch = Stopwatch.StartNew ();
 				try {
 					await Devices.LoadAsync (DeviceLoadLog, removed_locked: true);
 				} catch (Exception e) {
 					DeviceLoadLog.WriteLine ("Failed to load devices:");
 					DeviceLoadLog.WriteLine (e);
+				} finally {
+					DeviceLoadLog.WriteLine ($"Completed in {watch.Elapsed.TotalSeconds}s");
 				}
 			});
 
