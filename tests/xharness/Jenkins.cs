@@ -712,7 +712,7 @@ namespace xharness
 				}
 				Task.WaitAll (tasks.ToArray ());
 				GenerateReport ();
-				return Tasks.Any ((v) => v.Failed) ? 1 : 0;
+				return Tasks.Any ((v) => v.Failed || v.Skipped) ? 1 : 0;
 			} catch (Exception ex) {
 				MainLog.WriteLine ("Unexpected exception: {0}", ex);
 				Console.WriteLine ("Unexpected exception: {0}", ex);
@@ -1007,6 +1007,8 @@ namespace xharness
 				return "black";
 			else if (tests.Any ((v) => v.Ignored))
 				return "gray";
+			else if (tests.Any ((v) => v.Skipped))
+				return "orangered";
 			else
 				return "black";
 		}
@@ -1041,7 +1043,7 @@ namespace xharness
 				} else if (test.Waiting) {
 					return "darkgray";
 				} else if (test.Skipped) {
-					return "silver";
+					return "orangered";
 				} else {
 					return "pink";
 				}
