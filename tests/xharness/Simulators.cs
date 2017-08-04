@@ -534,6 +534,10 @@ namespace xharness
 							bool.TryParse (dev.SelectSingleNode ("IsLocked")?.InnerText, out d.IsLocked);
 							if (removed_locked && d.IsLocked)
 								continue;
+							if (string.IsNullOrEmpty (d.DeviceIdentifier)) {
+								log.WriteLine ("Found device without identifier in output. Name: '{0}'", d.Name);
+								continue;
+							}
 							connected_devices.Add (d);
 						}
 					}
