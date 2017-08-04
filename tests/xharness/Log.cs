@@ -119,12 +119,6 @@ namespace xharness
 		FileStream fs;
 		StreamWriter writer;
 
-		public FileStream FileStream {
-			get {
-				return fs;
-			}
-		}
-
 		public override StreamReader GetReader ()
 		{
 			return new StreamReader (new FileStream (path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
