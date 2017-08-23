@@ -367,7 +367,7 @@ vsts-device-tests: xharness/xharness.exe
 	$(Q) $(SYSTEM_MONO) --debug $< $(XHARNESS_VERBOSITY) --jenkins --autoconf --rootdir $(CURDIR) --sdkroot $(XCODE_DEVELOPER_ROOT) --use-system:true --label=skip-mac-tests,skip-ios-simulator-tests,skip-ios-msbuild-tests,skip-system-permission-tests,run-ios-device-tests,run-bcl-tests
 
 vsts-build-samples:
-	$(MAKE) -C sampletester
+	$(MAKE) -C sampletester run-tests-system
 
 ifdef ENABLE_XAMARIN
 wrench-launch-external wrench-report-external:
