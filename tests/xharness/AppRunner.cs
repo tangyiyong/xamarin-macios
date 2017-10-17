@@ -284,7 +284,25 @@ namespace xharness
 			if (mode == "watchos")
 				args.Append (" --device ios,watchos");
 
-			return await ProcessHelper.ExecuteCommandAsync (Harness.MlaunchPath, args.ToString (), main_log, TimeSpan.FromMinutes (mode == "watchos" ? 15 : 3));
+			var timeout = TimeSpan.FromMinutes (3);
+			if (mode == "watchos") {
+				var watchApp = Path.Combine (appPath, "Watch");
+				var info = new DirectoryInfo (watchApp);
+				if (info.Exists) {
+					long watchAppSize = 0;
+					foreach (var file in info.EnumerateFiles ("*", SearchOption.AllDirectories))
+						watchAppSize += file.Length;
+					// transfer speed is ~10MB/minute. Add another 50% just because transfer isn't the only thing happening, and also set it to at least 3 minutes
+					var estimatedTransferTime = watchAppSize / 1024 / 1024 / 10.0;
+					timeout = TimeSpan.FromMinutes (Math.Max (3, estimatedTransferTime * 1.5));
+					main_log.WriteLine ($"Estimated transfer speed to be {estimatedTransferTime} minutes based on the watch app size ({watchAppSize} bytes) and a speed of 10MB/s. Thus setting the install timeout to {timeout.TotalMinutes} minutes (giving it a little extra time).");
+				} else {
+					timeout = TimeSpan.FromMinutes (15);
+					main_log.WriteLine ($"Unable to determine watch app size, install timeout will be {timeout.TotalMinutes} minutes.");
+				}
+			}
+
+			return await ProcessHelper.ExecuteCommandAsync (Harness.MlaunchPath, args.ToString (), main_log, timeout);
 		}
 
 		public async Task<ProcessExecutionResult> UninstallAsync ()
@@ -318,123 +336,94 @@ namespace xharness
 				ensure_clean_simulator_state = value;
 			}
 		}
-
-		void GenerateHumanReadableLogs (string finalPath, string logHeader, XmlDocument doc)
-		{
-			// load the resource that contains the xslt and apply it to the doc and write the logs
-			if (File.Exists (finalPath)) {
-				// if the file does exist, remove it
-				File.Delete (finalPath);
-			}
-
-			using (var strm = Assembly.GetExecutingAssembly ().GetManifestResourceStream ("xharness.nunit-summary.xslt"))
-			using (var xsltReader = XmlReader.Create (strm)) 
-			using (var xmlReader = new XmlNodeReader (doc)) 
-			using (var writer = new StreamWriter (finalPath)) {
-				writer.Write (logHeader);
- 	   			var xslt = new XslCompiledTransform ();
-				xslt.Load (xsltReader);
-				xslt.Transform (xmlReader, null, writer);
-				writer.Flush ();
-			}
-		}
-
 		public bool TestsSucceeded (LogStream listener_log, bool timed_out, bool crashed)
 		{
 			string log;
 			using (var reader = listener_log.GetReader ())
 				log = reader.ReadToEnd ();
-			// parsing the result is different if we are in jenkins or nor.
+			// parsing the result is different if we are in jenkins or not.
+			// When in Jenkins, Touch.Unit produces an xml file instead of a console log (so that we can get better test reporting).
+			// However, for our own reporting, we still want the console-based log. This log is embedded inside the xml produced
+			// by Touch.Unit, so we need to extract it and write it to disk. We also need to re-save the xml output, since Touch.Unit
+			// wraps the NUnit xml output with additional information, which we need to unwrap so that Jenkins understands it.
 			if (Harness.InJenkins) {
 				// we have to parse the xml result
 				crashed = false;
-				if (log.Contains ("test-results")) {
-					// remove any possible extra info
-					var index = log.IndexOf ("<test-results");
-					var header = log.Substring(0, log.IndexOf ('<'));
-					log = log.Remove (0, index - 1);
-					var testsResults = new XmlDocument ();
-					testsResults.LoadXml (log);
+				var xmldoc = new XmlDocument ();
+				try {
+					xmldoc.LoadXml (log);
 
-					var mainResultNode = testsResults.SelectSingleNode("test-results");
+					var nunit_output = xmldoc.SelectSingleNode ("/TouchUnitTestRun/NUnitOutput");
+					var xmllog = nunit_output.InnerXml;
+					var extra_output = xmldoc.SelectSingleNode ("/TouchUnitTestRun/TouchUnitExtraData");
+					log = extra_output.InnerText;
+
+					File.WriteAllText (listener_log.FullPath, log);
+
+					var testsResults = new XmlDocument ();
+					testsResults.LoadXml (xmllog);
+
+					var mainResultNode = testsResults.SelectSingleNode ("test-results");
 					if (mainResultNode == null) {
 						Harness.LogWrench ($"Node is null.");
+					} else {
+						// update the information of the main node to add information about the mode and the test that is excuted. This will later create
+						// nicer reports in jenkins
+						mainResultNode.Attributes ["name"].Value = Target.AsString ();
+						// store a clean version of the logs, later this will be used by the bots to show results in github/web
+						var path = listener_log.FullPath;
+						path = path.Replace (".log", ".xml");
+						testsResults.Save (path);
+						Logs.Add (new LogFile ("Test xml", path));
+					}
+				} catch (Exception e) {
+					main_log.WriteLine ("Could not parse xml result file: {0}", e);
+
+					if (timed_out) {
+						Harness.LogWrench ($"@MonkeyWrench: AddSummary: <b><i>{mode} timed out</i></b><br/>");
+						return false;
+					} else {
+						Harness.LogWrench ($"@MonkeyWrench: AddSummary: <b><i>{mode} crashed</i></b><br/>");
+						main_log.WriteLine ("Test run crashed");
 						crashed = true;
 						return false;
 					}
-					// update the information of the main node to add information about the mode and the test that is excuted. This will later create
-					// nicer reports in jenkins
-					mainResultNode.Attributes["name"].Value = Target.AsString ();
-					// store a clean version of the logs, later this will be used by the bots to show results in github/web
-					var path = listener_log.FullPath;
-					path = path.Replace (".log", ".xml");
-					testsResults.Save (path);
-					Logs.Add (new LogFile ("Test xml", path));
-					// we want to keep the old TestResult page,
-					GenerateHumanReadableLogs (listener_log.FullPath, header, testsResults);
-					
-					int ignored = Convert.ToInt16(mainResultNode.Attributes["ignored"].Value);
-					int invalid = Convert.ToInt16(mainResultNode.Attributes["invalid"].Value);
-					int inconclusive = Convert.ToInt16(mainResultNode.Attributes["inconclusive"].Value);
-					int errors = Convert.ToInt16(mainResultNode.Attributes["errors"].Value);
-					int failures = Convert.ToInt16(mainResultNode.Attributes["failures"].Value);
-					int totalTests = Convert.ToInt16(mainResultNode.Attributes["total"].Value);
+				}
+			}
 
-					// generate human readable logs
-					var failed = errors != 0 || failures != 0;
-					if (failed) {
-						Harness.LogWrench ($"@MonkeyWrench: AddSummary: <b>{mode} failed: Test run: {totalTests} Passed: {totalTests - invalid - inconclusive - ignored} Inconclusive: {inconclusive} Failed: {errors + failures} Ignored: {ignored}</b><br/>");
-						main_log.WriteLine ("Test run failed");
-						return false;
-					} else {
-						Harness.LogWrench ($"@MonkeyWrench: AddSummary: {mode} succeeded: Test run: {totalTests} Passed: {totalTests - invalid - inconclusive - ignored} Inconclusive: {inconclusive} Failed: 0 Ignored: {ignored}<br/>");
-						main_log.WriteLine ("Test run succeeded");
-						return true;
+			// parsing the human readable results
+			if (log.Contains ("Tests run")) {
+				var tests_run = string.Empty;
+				var log_lines = log.Split ('\n');
+				var failed = false;
+				foreach (var line in log_lines) {
+					if (line.Contains ("Tests run:")) {
+						Console.WriteLine (line);
+						tests_run = line.Replace ("Tests run: ", "");
+						break;
+					} else if (line.Contains ("FAIL")) {
+						Console.WriteLine (line);
+						failed = true;
 					}
-				} else if (timed_out) {
-					Harness.LogWrench ($"@MonkeyWrench: AddSummary: <b><i>{mode} timed out</i></b><br/>");
+				}
+
+				if (failed) {
+					Harness.LogWrench ("@MonkeyWrench: AddSummary: <b>{0} failed: {1}</b><br/>", mode, tests_run);
+					main_log.WriteLine ("Test run failed");
 					return false;
 				} else {
-					Harness.LogWrench ($"@MonkeyWrench: AddSummary: <b><i>{mode} crashed</i></b><br/>");
-					main_log.WriteLine ("Test run crashed");
-					crashed = true;
-					return false;
+					Harness.LogWrench ("@MonkeyWrench: AddSummary: {0} succeeded: {1}<br/>", mode, tests_run);
+					main_log.WriteLine ("Test run succeeded");
+					return true;
 				}
+			} else if (timed_out) {
+				Harness.LogWrench ("@MonkeyWrench: AddSummary: <b><i>{0} timed out</i></b><br/>", mode);
+				return false;
 			} else {
-				// parsing the human readable results
-				if (log.Contains ("Tests run")) {
-					var tests_run = string.Empty;
-					var log_lines = log.Split ('\n');
-					var failed = false;
-					foreach (var line in log_lines) {
-						if (line.Contains ("Tests run:")) {
-							Console.WriteLine (line);
-							tests_run = line.Replace ("Tests run: ", "");
-							break;
-						} else if (line.Contains ("FAIL")) {
-							Console.WriteLine (line);
-							failed = true;
-						}
-					}
-
-					if (failed) {
-						Harness.LogWrench ("@MonkeyWrench: AddSummary: <b>{0} failed: {1}</b><br/>", mode, tests_run);
-						main_log.WriteLine ("Test run failed");
-						return false;
-					} else {
-						Harness.LogWrench ("@MonkeyWrench: AddSummary: {0} succeeded: {1}<br/>", mode, tests_run);
-						main_log.WriteLine ("Test run succeeded");
-						return true;
-					}
-				} else if (timed_out) {
-					Harness.LogWrench ("@MonkeyWrench: AddSummary: <b><i>{0} timed out</i></b><br/>", mode);
-					return false;
-				} else {
-					Harness.LogWrench ("@MonkeyWrench: AddSummary: <b><i>{0} crashed</i></b><br/>", mode);
-					main_log.WriteLine ("Test run crashed");
-					crashed = true;
-					return false;
-				}
+				Harness.LogWrench ("@MonkeyWrench: AddSummary: <b><i>{0} crashed</i></b><br/>", mode);
+				main_log.WriteLine ("Test run crashed");
+				crashed = true;
+				return false;
 			}
 		}
 
@@ -476,8 +465,11 @@ namespace xharness
 			args.Append (" -argument=-app-arg:-enablenetwork");
 			args.Append (" -setenv=NUNIT_ENABLE_NETWORK=true");
 			// detect if we are using a jenkins bot.
-			if (Harness.InJenkins) 
+			var useXmlOutput = Harness.InJenkins;
+			if (useXmlOutput) {
 				args.Append (" -setenv=NUNIT_ENABLE_XML_OUTPUT=true");
+				args.Append (" -setenv=NUNIT_ENABLE_XML_MODE=wrapped");
+			}
 
 			if (!IncludeSystemPermissionTests)
 				args.Append (" -setenv=DISABLE_SYSTEM_PERMISSION_TESTS=1");
@@ -497,12 +489,24 @@ namespace xharness
 				args.AppendFormat (" -argument=-app-arg:-hostname:{0}", ips.ToString ());
 				args.AppendFormat (" -setenv=NUNIT_HOSTNAME={0}", ips.ToString ());
 			}
-			var transport = mode == "watchos" ? "HTTP" : "TCP";
+			string transport;
+			if (mode == "watchos") {
+				transport = isSimulator ? "FILE" : "HTTP";
+			} else {
+				transport = "TCP";
+			}
 			args.AppendFormat (" -argument=-app-arg:-transport:{0}", transport);
 			args.AppendFormat (" -setenv=NUNIT_TRANSPORT={0}", transport);
 
+			listener_log = Logs.CreateStream (LogDirectory, string.Format ("test-{0}-{1:yyyyMMdd_HHmmss}.log", mode, DateTime.Now), "Test log");
+
 			SimpleListener listener;
 			switch (transport) {
+			case "FILE":
+				var fn = listener_log.FullPath + ".tmp";
+				listener = new SimpleFileListener (fn);
+				args.Append (" -setenv=NUNIT_LOG_FILE=").Append (StringUtils.Quote (fn));
+				break;
 			case "HTTP":
 				listener = new SimpleHttpListener ();
 				break;
@@ -512,11 +516,11 @@ namespace xharness
 			default:
 				throw new NotImplementedException ();
 			}
-			listener_log = Logs.CreateStream (LogDirectory, string.Format ("test-{0}-{1:yyyyMMdd_HHmmss}.log", mode, DateTime.Now), "Test log");
 			listener.TestLog = listener_log;
 			listener.Log = main_log;
 			listener.AutoExit = true;
 			listener.Address = System.Net.IPAddress.Any;
+			listener.XmlOutput = useXmlOutput;
 			listener.Initialize ();
 
 			args.AppendFormat (" -argument=-app-arg:-hostport:{0}", listener.Port);
@@ -561,6 +565,8 @@ namespace xharness
 				args.Append (isSimulator ? " --launchsim " : " --launchdev ");
 				args.Append (StringUtils.Quote (launchAppPath));
 			}
+			if (!isSimulator)
+				args.Append (" --disable-memory-limits");
 
 			if (isSimulator) {
 				if (!await FindSimulatorAsync ())

@@ -19,6 +19,8 @@ Copyright (C) 2013-2016 Xamarin Inc. All rights reserved.
 	<UsingTask TaskName="Xamarin.iOS.Tasks.BTouch" AssemblyFile="Xamarin.iOS.Tasks.dll" />
 	<UsingTask TaskName="Xamarin.MacDev.Tasks.Zip" AssemblyFile="Xamarin.MacDev.Tasks.dll" />
 
+	<UsingTask TaskName="Microsoft.Build.Tasks.Delete" AssemblyFile="Xamarin.MacDev.Tasks.dll"/>
+
 	<Import Project="$(MSBuildThisFileDirectory)$(MSBuildThisFileName).Before.targets"
 			Condition="Exists('$(MSBuildThisFileDirectory)$(MSBuildThisFileName).Before.targets')"/>
 
@@ -45,7 +47,8 @@ Copyright (C) 2013-2016 Xamarin Inc. All rights reserved.
 	<!-- Override the CoreCompile Target to use btouch -->
 	<Target Name="_GenerateBindings"
 		Inputs="$(MSBuildAllProjects);@(ObjcBindingApiDefinition);@(ObjcBindingCoreSource);@(ReferencePath);@(ObjcBindingNativeLibrary)"
-		Outputs="$(_GeneratedSourcesFileList)">
+		Outputs="$(_GeneratedSourcesFileList)"
+		Condition="'$(DesignTimeBuild)' != 'true'">
 
 		<PropertyGroup>
 			<BTouchEmitDebugInformation>false</BTouchEmitDebugInformation>
@@ -81,7 +84,7 @@ Copyright (C) 2013-2016 Xamarin Inc. All rights reserved.
 		</BTouch>
 	</Target>
 
-	<Target Name="_PrepareNativeReferences">
+	<Target Name="_PrepareNativeReferences" Condition="'$(DesignTimeBuild)' != 'true'">
 		<PrepareNativeReferences
 			SessionId="$(BuildSessionId)"
 			IntermediateOutputPath="$(IntermediateOutputPath)"
@@ -98,7 +101,9 @@ Copyright (C) 2013-2016 Xamarin Inc. All rights reserved.
 		</CreateItem>
 	</Target>
 
-	<Target Name="_CompressNativeFrameworkResources" Inputs="@(_NativeFrameworkResource)" Outputs="$(IntermediateOutputPath)%(_NativeFramework.Filename)%(_NativeFramework.Extension)" DependsOnTargets="_CollectNativeFrameworkResources" > 
+	<Target Name="_CompressNativeFrameworkResources" Inputs="@(_NativeFrameworkResource)" Outputs="$(IntermediateOutputPath)%(_NativeFramework.Filename)%(_NativeFramework.Extension)" DependsOnTargets="_CollectNativeFrameworkResources">
+		<Delete SessionId="$(BuildSessionId)" Condition="'$(IsMacEnabled)' == 'true'" Files="$(IntermediateOutputPath)%(_NativeFramework.Filename)%(_NativeFramework.Extension)" />
+
 		<Zip
 			SessionId="$(BuildSessionId)"
 			Condition="'$(IsMacEnabled)' == 'true'"
@@ -123,7 +128,9 @@ Copyright (C) 2013-2016 Xamarin Inc. All rights reserved.
 		</CreateItem>
 	</Target>
 	
-	<Target Name="_CompressObjCBindingNativeFrameworkResources" Inputs="@(_ObjCBindingNativeFrameworkResource)" Outputs="$(IntermediateOutputPath)%(ObjCBindingNativeFramework.Filename)%(ObjCBindingNativeFramework.Extension)" DependsOnTargets="_CollectObjCBindingNativeFrameworkResources" > 
+	<Target Name="_CompressObjCBindingNativeFrameworkResources" Inputs="@(_ObjCBindingNativeFrameworkResource)" Outputs="$(IntermediateOutputPath)%(ObjCBindingNativeFramework.Filename)%(ObjCBindingNativeFramework.Extension)" DependsOnTargets="_CollectObjCBindingNativeFrameworkResources">
+		<Delete SessionId="$(BuildSessionId)" Condition="'$(IsMacEnabled)' == 'true'" Files="$(IntermediateOutputPath)%(ObjCBindingNativeFramework.Filename)%(ObjCBindingNativeFramework.Extension)" />
+
 		<Zip
 			SessionId="$(BuildSessionId)"
 			Condition="'$(IsMacEnabled)' == 'true'"
@@ -142,7 +149,9 @@ Copyright (C) 2013-2016 Xamarin Inc. All rights reserved.
 	</Target>
 	<!-- /OBSOLETE -->
 
-	<Target Name="_CollectGeneratedSources" DependsOnTargets="_GenerateBindings;_CompressNativeFrameworkResources;_CompressObjCBindingNativeFrameworkResources">
+	<Target Name="_CollectGeneratedSources" DependsOnTargets="_GenerateBindings;_CompressNativeFrameworkResources;_CompressObjCBindingNativeFrameworkResources"
+		Condition="'$(DesignTimeBuild)' != 'true'">
+		
 		<ReadLinesFromFile File="$(_GeneratedSourcesFileList)" >
 			<Output TaskParameter="Lines" ItemName="GeneratedSources" />
 		</ReadLinesFromFile>

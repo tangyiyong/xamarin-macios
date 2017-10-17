@@ -1,3 +1,5 @@
+#define ENABLE_STATIC_REGISTRAR_TESTS
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -67,7 +69,9 @@ namespace Xamarin.MMP.Tests
 			});
 		}
 
+#if ENABLE_STATIC_REGISTRAR_TESTS
 		[Test]
+#endif
 		public void Unified_Static_RegistrarTest ()
 		{
 			if (!PlatformHelpers.CheckSystemVersion (10, 11))
@@ -607,7 +611,9 @@ namespace Xamarin.MMP.Tests
 			});
 		}
 
+#if ENABLE_STATIC_REGISTRAR_TESTS
 		[Test]
+#endif
 		public void UnifiedDebugBuilds_ShouldLinkToPartialStatic_UnlessDisabled ()
 		{
 			RunMMPTest (tmpDir =>
@@ -726,6 +732,46 @@ namespace Xamarin.MMP.Tests
 
 				test.CSProjConfig = test.CSProjConfig + "<MonoBundlingExtraArgs>--force-unsupported-linker</MonoBundlingExtraArgs>";
 				TI.TestUnifiedExecutable (test);
+			});
+		}
+
+		[Test]
+		public void Unified32BitWithXMRequiringLibrary_ShouldReferenceCorrectXM_AndNotCrash ()
+		{
+			RunMMPTest (tmpDir => {
+				TI.UnifiedTestConfig libConfig = new TI.UnifiedTestConfig (tmpDir) {
+					ProjectName = "UnifiedLibrary",
+					TestCode = "namespace Library { public static class Foo { public static void Bar () { var v = new Foundation.NSObject (); } } }"
+				};
+
+				string csprojTarget = TI.GenerateUnifiedLibraryProject (libConfig);
+				TI.BuildProject (csprojTarget, isUnified: true);
+
+				string referenceCode = string.Format (@"<Reference Include=""UnifiedLibrary""><HintPath>{0}</HintPath></Reference>", Path.Combine (tmpDir, "bin/Debug/UnifiedLibrary.dll"));
+
+				TI.UnifiedTestConfig test = new TI.UnifiedTestConfig (tmpDir) {
+					CSProjConfig = @"<PlatformTarget>x86</PlatformTarget><XamMacArch>i386</XamMacArch>",
+					ReferencesBeforePlatform = referenceCode,
+					TestCode = "Library.Foo.Bar ();"
+				};
+
+				TI.TestUnifiedExecutable (test);
+			});
+		}
+
+		[Test]
+		public void OldXcodeTest ()
+		{
+			var oldXcode = Xamarin.Tests.Configuration.GetOldXcodeRoot ();
+
+			if (string.IsNullOrEmpty (oldXcode))
+				Assert.Ignore ("This test needs an old Xcode.");
+
+			RunMMPTest (tmpDir => {
+				TI.UnifiedTestConfig test = new TI.UnifiedTestConfig (tmpDir) {
+					CSProjConfig = "<DebugSymbols>True</DebugSymbols>", // This makes the msbuild tasks pass /debug to mmp
+				};
+				TI.TestUnifiedExecutable (test, shouldFail: false, configuration: "Debug", environment: new string [] { "MD_APPLE_SDK_ROOT", Path.GetDirectoryName (Path.GetDirectoryName (oldXcode)) });
 			});
 		}
 	}

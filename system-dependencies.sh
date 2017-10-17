@@ -2,12 +2,21 @@
 
 set -o pipefail
 
+cd $(dirname $0)
+
 FAIL=
 PROVISION_DOWNLOAD_DIR=/tmp/x-provisioning
+SUDO=sudo
+
+OPTIONAL_SHARPIE=1
 
 # parse command-line arguments
 while ! test -z $1; do
 	case $1 in
+		--no-sudo)
+			SUDO=
+			shift
+			;;
 		--provision-xcode)
 			PROVISION_XCODE=1
 			shift
@@ -34,6 +43,11 @@ while ! test -z $1; do
 			PROVISION_AUTOTOOLS=1
 			shift
 			;;
+		--provision-sharpie)
+			PROVISION_SHARPIE=1
+			unset OPTIONAL_SHARPIE
+			shift
+			;;
 		--provision-all)
 			PROVISION_MONO=1
 			PROVISION_VS=1
@@ -41,6 +55,18 @@ while ! test -z $1; do
 			PROVISION_CMAKE=1
 			PROVISION_AUTOTOOLS=1
 			PROVISION_HOMEBREW=1
+			PROVISION_SHARPIE=1
+			shift
+			;;
+		--ignore-all)
+			IGNORE_OSX=1
+			IGNORE_MONO=1
+			IGNORE_VISUAL_STUDIO=1
+			IGNORE_XCODE=1
+			IGNORE_CMAKE=1
+			IGNORE_AUTOTOOLS=1
+			IGNORE_HOMEBREW=1
+			IGNORE_SHARPIE=1
 			shift
 			;;
 		--ignore-osx)
@@ -65,6 +91,15 @@ while ! test -z $1; do
 			;;
 		--ignore-cmake)
 			IGNORE_CMAKE=1
+			shift
+			;;
+		--ignore-sharpie)
+			IGNORE_SHARPIE=1
+			shift
+			;;
+		--enforce-sharpie)
+			unset IGNORE_SHARPIE
+			unset OPTIONAL_SHARPIE
 			shift
 			;;
 		*)
@@ -159,7 +194,7 @@ function install_mono () {
 	curl -L $MONO_URL > $MONO_PKG
 
 	log "Installing Mono $MIN_MONO_VERSION from $MONO_URL..."
-	sudo installer -pkg $MONO_PKG -target /
+	$SUDO installer -pkg $MONO_PKG -target /
 
 	rm -f $MONO_PKG
 }
@@ -184,9 +219,9 @@ function install_visual_studio () {
 	log "Mounting $VS_DMG into $VS_MOUNTPOINT..."
 	hdiutil attach $VS_DMG -mountpoint $VS_MOUNTPOINT -quiet -nobrowse
 	log "Removing previous Visual Studio from $VS"
-	sudo rm -Rf "$VS"
+	$SUDO rm -Rf "$VS"
 	log "Installing Visual Studio $MIN_VISUAL_STUDIO_VERSION to $VS..."
-	sudo cp -R "$VS_MOUNTPOINT/Visual Studio.app" /Applications
+	$SUDO cp -R "$VS_MOUNTPOINT/Visual Studio.app" /Applications
 	log "Unmounting $VS_DMG..."
 	hdiutil detach $VS_MOUNTPOINT -quiet
 
@@ -247,11 +282,11 @@ function install_specific_xcode () {
 	rm -f $XCODE_DMG
 
 	log "Removing any com.apple.quarantine attributes from the installed Xcode"
-	sudo xattr -d -r com.apple.quarantine $XCODE_ROOT
+	$SUDO xattr -d -r com.apple.quarantine $XCODE_ROOT
 
 	if is_at_least_version $XCODE_VERSION 5.0; then
 		log "Accepting Xcode license"
-		sudo $XCODE_DEVELOPER_ROOT/usr/bin/xcodebuild -license accept
+		$SUDO $XCODE_DEVELOPER_ROOT/usr/bin/xcodebuild -license accept
 	fi
 
 	if is_at_least_version $XCODE_VERSION 8.0; then
@@ -259,7 +294,7 @@ function install_specific_xcode () {
 		for pkg in $PKGS; do
 			if test -f "$XCODE_DEVELOPER_ROOT/../Resources/Packages/$pkg"; then
 				log "Installing $pkg"
-				sudo /usr/sbin/installer -dumplog -verbose -pkg "$XCODE_DEVELOPER_ROOT/../Resources/Packages/$pkg" -target /
+				$SUDO /usr/sbin/installer -dumplog -verbose -pkg "$XCODE_DEVELOPER_ROOT/../Resources/Packages/$pkg" -target /
 				log "Installed $pkg"
 			else
 				log "Not installing $pkg because it doesn't exist."
@@ -267,8 +302,10 @@ function install_specific_xcode () {
 		done
 	fi
 
-	log "Executing 'sudo xcode-select -s $XCODE_DEVELOPER_ROOT'"
-	sudo xcode-select -s $XCODE_DEVELOPER_ROOT
+	log "Executing '$SUDO xcode-select -s $XCODE_DEVELOPER_ROOT'"
+	$SUDO xcode-select -s $XCODE_DEVELOPER_ROOT
+	log "Clearing xcrun cache..."
+	xcrun -k
 
 	ok "Xcode $XCODE_VERSION provisioned"
 }
@@ -295,9 +332,9 @@ function check_specific_xcode () {
 		if is_at_least_version $XCODE_VERSION 5.0; then
 			if ! $XCODE_DEVELOPER_ROOT/usr/bin/xcodebuild -license check >/dev/null 2>&1; then
 				if ! test -z $PROVISION_XCODE; then
-					sudo $XCODE_DEVELOPER_ROOT/usr/bin/xcodebuild -license accept
+					$SUDO $XCODE_DEVELOPER_ROOT/usr/bin/xcodebuild -license accept
 				else
-					fail "The license for Xcode $XCODE_VERSION has not been accepted. Execute 'sudo $XCODE_DEVELOPER_ROOT/usr/bin/xcodebuild' to review the license and accept it."
+					fail "The license for Xcode $XCODE_VERSION has not been accepted. Execute '$SUDO $XCODE_DEVELOPER_ROOT/usr/bin/xcodebuild' to review the license and accept it."
 				fi
 				return
 			fi
@@ -314,10 +351,12 @@ function check_specific_xcode () {
 	local XCODE_SELECT=$(xcode-select -p)
 	if [[ "x$XCODE_SELECT" != "x$XCODE_DEVELOPER_ROOT" ]]; then
 		if ! test -z $PROVISION_XCODE; then
-			log "Executing 'sudo xcode-select -s $XCODE_DEVELOPER_ROOT'"
-			sudo xcode-select -s $XCODE_DEVELOPER_ROOT
+			log "Executing '$SUDO xcode-select -s $XCODE_DEVELOPER_ROOT'"
+			$SUDO xcode-select -s $XCODE_DEVELOPER_ROOT
+			log "Clearing xcrun cache..."
+			xcrun -k
 		else
-			fail "'xcode-select -p' does not point to $XCODE_DEVELOPER_ROOT, it points to $XCODE_SELECT. Execute 'sudo xcode-select -s $XCODE_DEVELOPER_ROOT' to fix."
+			fail "'xcode-select -p' does not point to $XCODE_DEVELOPER_ROOT, it points to $XCODE_SELECT. Execute '$SUDO xcode-select -s $XCODE_DEVELOPER_ROOT' to fix."
 		fi
 	fi
 
@@ -569,6 +608,8 @@ function check_cmake () {
 
 function check_homebrew ()
 {
+	if ! test -z $IGNORE_HOMEBREW; then return; fi
+
 IFStmp=$IFS
 IFS='
 '
@@ -585,6 +626,83 @@ IFS='
 IFS=$IFS_tmp
 }
 
+function install_objective_sharpie () {
+	local SHARPIE_URL=$(grep MIN_SHARPIE_URL= Make.config | sed 's/.*=//')
+	local MIN_SHARPIE_VERSION=$(grep MIN_SHARPIE_VERSION= Make.config | sed 's/.*=//')
+
+	if test -z "$SHARPIE_URL"; then
+		fail "No MIN_SHARPIE_URL set in Make.config, cannot provision Objective Sharpie"
+		return
+	fi
+
+	mkdir -p "$PROVISION_DOWNLOAD_DIR"
+	log "Downloading Objective Sharpie $MIN_SHARPIE_VERSION from $SHARPIE_URL to $PROVISION_DOWNLOAD_DIR..."
+	local SHARPIE_NAME=$(basename "$SHARPIE_URL")
+	local SHARPIE_PKG=$PROVISION_DOWNLOAD_DIR/$SHARPIE_NAME
+	curl -L "$SHARPIE_URL" > "$SHARPIE_PKG"
+
+	log "Installing Objective-Sharpie $MIN_SHARPIE_VERSION from $SHARPIE_URL..."
+	sudo installer -pkg "$SHARPIE_PKG" -target /
+
+	rm -f "$SHARPIE_PKG"
+}
+
+function check_objective_sharpie () {
+	if ! test -z $IGNORE_SHARPIE; then return; fi
+
+	MIN_SHARPIE_VERSION=$(grep MIN_SHARPIE_VERSION= Make.config | sed 's/.*=//')
+	MAX_SHARPIE_VERSION=$(grep MAX_SHARPIE_VERSION= Make.config | sed 's/.*=//')
+
+	if ! test -f /Library/Frameworks/ObjectiveSharpie.framework/Versions/Current/Version; then
+		if ! test -z "$PROVISION_SHARPIE"; then
+			install_objective_sharpie
+			ACTUAL_SHARPIE_VERSION=$(cat /Library/Frameworks/ObjectiveSharpie.framework/Versions/Current/Version)
+		else
+			if test -z $OPTIONAL_SHARPIE; then
+				fail "You must install Objective Sharpie, at least $MIN_SHARPIE_VERSION (no Objective Sharpie found)."
+			else
+				warn "You do not have Objective Sharpie installed (should be at least $MIN_SHARPIE_VERSION)."
+			fi
+			return
+		fi
+	else
+		ACTUAL_SHARPIE_VERSION=$(cat /Library/Frameworks/ObjectiveSharpie.framework/Versions/Current/Version)
+		if ! is_at_least_version "$ACTUAL_SHARPIE_VERSION" "$MIN_SHARPIE_VERSION"; then
+			if ! test -z "$PROVISION_SHARPIE"; then
+				install_objective_sharpie
+				ACTUAL_SHARPIE_VERSION=$(cat /Library/Frameworks/ObjectiveSharpie.framework/Versions/Current/Version)
+			else
+				if test -z $OPTIONAL_SHARPIE; then
+					fail "You must have at least Objective Sharpie $MIN_SHARPIE_VERSION, found $ACTUAL_SHARPIE_VERSION"
+				else
+					warn "You do not have have at least Objective Sharpie $MIN_SHARPIE_VERSION (found $ACTUAL_SHARPIE_VERSION)"
+				fi
+				return
+			fi
+		elif [[ "$ACTUAL_SHARPIE_VERSION" == "$MAX_SHARPIE_VERSION" ]]; then
+			: # this is ok
+		elif is_at_least_version "$ACTUAL_SHARPIE_VERSION" "$MAX_SHARPIE_VERSION"; then
+			if ! test -z "$PROVISION_SHARPIE"; then
+				install_objective_sharpie
+				ACTUAL_SHARPIE_VERSION=$(cat /Library/Frameworks/ObjectiveSharpie.framework/Versions/Current/Version)
+			else
+				if test -z $OPTIONAL_SHARPIE; then
+					fail "Your Objective Sharpie version is too new, max version is $MAX_SHARPIE_VERSION, found $ACTUAL_SHARPIE_VERSION."
+				else
+					warn "You do not have have at most Objective Sharpie $MAX_SHARPIE_VERSION (found $ACTUAL_SHARPIE_VERSION)"
+				fi
+				return
+			fi
+		fi
+	fi
+
+	if test -z $OPTIONAL_SHARPIE; then
+		ok "Found Objective Sharpie $ACTUAL_SHARPIE_VERSION (at least $MIN_SHARPIE_VERSION and not more than $MAX_SHARPIE_VERSION is required)"
+	else
+		ok "Found Objective Sharpie $ACTUAL_SHARPIE_VERSION (at least $MIN_SHARPIE_VERSION and not more than $MAX_SHARPIE_VERSION is recommended)"
+	fi
+}
+
 echo "Checking system..."
 
 check_osx_version
@@ -594,6 +712,7 @@ check_autotools
 check_mono
 check_visual_studio
 check_cmake
+check_objective_sharpie
 
 if test -z $FAIL; then
 	echo "System check succeeded"
@@ -601,3 +720,4 @@ else
 	echo "System check failed"
 	exit 1
 fi
+

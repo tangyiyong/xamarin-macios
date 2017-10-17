@@ -31,6 +31,7 @@ namespace xharness
 		public bool IncludeSimulator = true;
 		public bool IncludeDevice;
 		public bool IncludeSystemPermissionTests = true; // tests that require access to system resources (system contacts, photo library, etc) in order to work
+		public bool IncludeXtro;
 
 		public Logs Logs = new Logs ();
 		public Log MainLog;
@@ -93,7 +94,7 @@ namespace xharness
 				}
 			});
 
-			return Task.WhenAll (simulatorLoadTask, deviceLoadTask);
+			return Task.CompletedTask;
 		}
 
 		IEnumerable<RunSimulatorTask> CreateRunSimulatorTaskAsync (XBuildTask buildTask)
@@ -148,64 +149,65 @@ namespace xharness
 				bool ignored = !IncludeDevice;
 				if (!IsIncluded (project))
 					ignored = true;
-				
-				var build64 = new XBuildTask
-				{
-					Jenkins = this,
-					TestProject = project,
-					ProjectConfiguration = "Debug64",
-					ProjectPlatform = "iPhone",
-					Platform = TestPlatform.iOS_Unified64,
-					TestName = project.Name,
-				};
-				rv.Add (new RunDeviceTask (build64, Devices.ConnectedDevices.Where ((dev) => dev.DevicePlatform == DevicePlatform.iOS && dev.Supports64Bit)) { Ignored = ignored || !IncludeiOS });
 
-				var build32 = new XBuildTask
-				{
-					Jenkins = this,
-					TestProject = project,
-					ProjectConfiguration = "Debug32",
-					ProjectPlatform = "iPhone",
-					Platform = TestPlatform.iOS_Unified32,
-					TestName = project.Name,
-				};
-				rv.Add (new RunDeviceTask (build32, Devices.ConnectedDevices.Where ((dev) => dev.DevicePlatform == DevicePlatform.iOS)) { Ignored = ignored || !IncludeiOS });
+				if (!project.SkipiOSVariation) {
+					var build64 = new XBuildTask {
+						Jenkins = this,
+						TestProject = project,
+						ProjectConfiguration = "Debug64",
+						ProjectPlatform = "iPhone",
+						Platform = TestPlatform.iOS_Unified64,
+						TestName = project.Name,
+					};
+					rv.Add (new RunDeviceTask (build64, Devices.ConnectedDevices.Where ((dev) => dev.DevicePlatform == DevicePlatform.iOS && dev.Supports64Bit)) { Ignored = ignored || !IncludeiOS });
 
-				var todayProject = project.AsTodayExtensionProject ();
-				var buildToday = new XBuildTask
-				{
-					Jenkins = this,
-					TestProject = todayProject,
-					ProjectConfiguration = "Debug64",
-					ProjectPlatform = "iPhone",
-					Platform = TestPlatform.iOS_TodayExtension64,
-					TestName = project.Name,
-				};
-				rv.Add (new RunDeviceTask (buildToday, Devices.ConnectedDevices.Where ((dev) => dev.DevicePlatform == DevicePlatform.iOS && dev.Supports64Bit)) { Ignored = ignored || !IncludeiOSExtensions });
+					var build32 = new XBuildTask {
+						Jenkins = this,
+						TestProject = project,
+						ProjectConfiguration = "Debug32",
+						ProjectPlatform = "iPhone",
+						Platform = TestPlatform.iOS_Unified32,
+						TestName = project.Name,
+					};
+					rv.Add (new RunDeviceTask (build32, Devices.ConnectedDevices.Where ((dev) => dev.DevicePlatform == DevicePlatform.iOS && dev.Supports32Bit)) { Ignored = ignored || !IncludeiOS });
 
-				var tvOSProject = project.AsTvOSProject ();
-				var buildTV = new XBuildTask
-				{
-					Jenkins = this,
-					TestProject = tvOSProject,
-					ProjectConfiguration = "Debug",
-					ProjectPlatform = "iPhone",
-					Platform = TestPlatform.tvOS,
-					TestName = project.Name,
-				};
-				rv.Add (new RunDeviceTask (buildTV, Devices.ConnectedDevices.Where ((dev) => dev.DevicePlatform == DevicePlatform.tvOS)) { Ignored = ignored || !IncludetvOS });
+					var todayProject = project.AsTodayExtensionProject ();
+					var buildToday = new XBuildTask {
+						Jenkins = this,
+						TestProject = todayProject,
+						ProjectConfiguration = "Debug64",
+						ProjectPlatform = "iPhone",
+						Platform = TestPlatform.iOS_TodayExtension64,
+						TestName = project.Name,
+					};
+					rv.Add (new RunDeviceTask (buildToday, Devices.ConnectedDevices.Where ((dev) => dev.DevicePlatform == DevicePlatform.iOS && dev.Supports64Bit)) { Ignored = ignored || !IncludeiOSExtensions });
+				}
 
-				var watchOSProject = project.AsWatchOSProject ();
-				var buildWatch = new XBuildTask
-				{
-					Jenkins = this,
-					TestProject = watchOSProject,
-					ProjectConfiguration = "Debug",
-					ProjectPlatform = "iPhone",
-					Platform = TestPlatform.watchOS,
-					TestName = project.Name,
-				};
-				rv.Add (new RunDeviceTask (buildWatch, Devices.ConnectedDevices.Where ((dev) => dev.DevicePlatform == DevicePlatform.watchOS)){ Ignored = ignored || !IncludewatchOS });
+				if (!project.SkiptvOSVariation) {
+					var tvOSProject = project.AsTvOSProject ();
+					var buildTV = new XBuildTask {
+						Jenkins = this,
+						TestProject = tvOSProject,
+						ProjectConfiguration = "Debug",
+						ProjectPlatform = "iPhone",
+						Platform = TestPlatform.tvOS,
+						TestName = project.Name,
+					};
+					rv.Add (new RunDeviceTask (buildTV, Devices.ConnectedDevices.Where ((dev) => dev.DevicePlatform == DevicePlatform.tvOS)) { Ignored = ignored || !IncludetvOS });
+				}
+
+				if (!project.SkipwatchOSVariation) {
+					var watchOSProject = project.AsWatchOSProject ();
+					var buildWatch = new XBuildTask {
+						Jenkins = this,
+						TestProject = watchOSProject,
+						ProjectConfiguration = "Debug",
+						ProjectPlatform = "iPhone",
+						Platform = TestPlatform.watchOS,
+						TestName = project.Name,
+					};
+					rv.Add (new RunDeviceTask (buildWatch, Devices.ConnectedDevices.Where ((dev) => dev.DevicePlatform == DevicePlatform.watchOS)) { Ignored = ignored || !IncludewatchOS });
+				}
 			}
 
 			var assembly_build_targets = new []
@@ -361,12 +363,17 @@ namespace xharness
 				"msbuild",
 				"tests/mac-binding-project",
 			}.Intersect (btouch_prefixes).ToArray ();
+			var xtro_prefixes = new string [] {
+				"tests/xtro-sharpie",
+				"src",
+			};
 
 			SetEnabled (files, mtouch_prefixes, "mtouch", ref IncludeMtouch);
 			SetEnabled (files, mmp_prefixes, "mmp", ref IncludeMmpTest);
 			SetEnabled (files, bcl_prefixes, "bcl", ref IncludeBcl);
 			SetEnabled (files, btouch_prefixes, "btouch", ref IncludeBtouch);
 			SetEnabled (files, mac_binding_project, "mac-binding-project", ref IncludeMacBindingProject);
+			SetEnabled (files, xtro_prefixes, "xtro", ref IncludeXtro);
 		}
 
 		void SetEnabled (IEnumerable<string> files, string [] prefixes, string testname, ref bool value)
@@ -399,6 +406,7 @@ namespace xharness
 			SetEnabled (labels, "mac-binding-project", ref IncludeMacBindingProject);
 			SetEnabled (labels, "ios-extensions", ref IncludeiOSExtensions);
 			SetEnabled (labels, "ios-device", ref IncludeDevice);
+			SetEnabled (labels, "xtro", ref IncludeXtro);
 
 			// enabled by default
 			SetEnabled (labels, "ios", ref IncludeiOS);
@@ -449,9 +457,12 @@ namespace xharness
 					ignored = true;
 
 				var ps = new List<Tuple<TestProject, TestPlatform, bool>> ();
-				ps.Add (new Tuple<TestProject, TestPlatform, bool> (project, TestPlatform.iOS_Unified, ignored || !IncludeiOS));
-				ps.Add (new Tuple<TestProject, TestPlatform, bool> (project.AsTvOSProject (), TestPlatform.tvOS, ignored || !IncludetvOS));
-				ps.Add (new Tuple<TestProject, TestPlatform, bool> (project.AsWatchOSProject (), TestPlatform.watchOS, ignored || !IncludewatchOS));
+				if (!project.SkipiOSVariation)
+					ps.Add (new Tuple<TestProject, TestPlatform, bool> (project, TestPlatform.iOS_Unified, ignored || !IncludeiOS));
+				if (!project.SkiptvOSVariation)
+					ps.Add (new Tuple<TestProject, TestPlatform, bool> (project.AsTvOSProject (), TestPlatform.tvOS, ignored || !IncludetvOS));
+				if (!project.SkipwatchOSVariation)
+					ps.Add (new Tuple<TestProject, TestPlatform, bool> (project.AsWatchOSProject (), TestPlatform.watchOS, ignored || !IncludewatchOS));
 				foreach (var pair in ps) {
 					var derived = new XBuildTask () {
 						Jenkins = this,
@@ -469,6 +480,7 @@ namespace xharness
 			foreach (var taskGroup in runSimulatorTasks.GroupBy ((RunSimulatorTask task) => task.Platform)) {
 				Tasks.Add (new AggregatedRunSimulatorTask (taskGroup) {
 					Jenkins = this,
+					TestName = $"Tests for {taskGroup.Key}",
 				});
 			}
 
@@ -588,7 +600,7 @@ namespace xharness
 
 			var buildGenerator = new MakeTask {
 				Jenkins = this,
-				TestProject = new TestProject (Path.GetFullPath (Path.Combine (Harness.RootDirectory, "..", "src", "generator-ikvm.sln"))),
+				TestProject = new TestProject (Path.GetFullPath (Path.Combine (Harness.RootDirectory, "..", "src", "generator.sln"))),
 				SpecifyPlatform = false,
 				SpecifyConfiguration = false,
 				Platform = TestPlatform.iOS,
@@ -628,7 +640,17 @@ namespace xharness
 				Ignored = !IncludeMacBindingProject || !IncludeMac,
 			};
 			Tasks.Add (runMacBindingProject);
-			
+
+			var runXtroTests = new MakeTask {
+				Jenkins = this,
+				Platform = TestPlatform.All,
+				TestName = "Xtro",
+				Target = "wrench",
+				WorkingDirectory = Path.Combine (Harness.RootDirectory, "xtro-sharpie"),
+				Ignored = !IncludeXtro,
+			};
+			Tasks.Add (runXtroTests);
+
 			Tasks.AddRange (CreateRunDeviceTasks ());
 		}
 
@@ -927,6 +949,12 @@ namespace xharness
 								}
 							}
 							break;
+						case "/reload-devices":
+							GC.KeepAlive (Devices.LoadAsync (DeviceLoadLog, force: true));
+							break;
+						case "/reload-simulators":
+							GC.KeepAlive (Simulators.LoadAsync (SimulatorLoadLog, force: true));
+							break;
 						case "/quit":
 							using (var writer = new StreamWriter (response.OutputStream)) {
 								writer.WriteLine ("<!DOCTYPE html>");
@@ -1052,10 +1080,23 @@ namespace xharness
 				lock (report_lock) {
 					var report = Path.Combine (LogDirectory, "index.html");
 					using (var stream = new MemoryStream ()) {
-						GenerateReportImpl (stream);
+						MemoryStream markdown_summary = null;
+						StreamWriter markdown_writer = null;
+						if (!string.IsNullOrEmpty (Harness.MarkdownSummaryPath)) {
+							markdown_summary = new MemoryStream ();
+							markdown_writer = new StreamWriter (markdown_summary);
+						}
+						GenerateReportImpl (stream, markdown_writer);
 						if (File.Exists (report))
 							File.Delete (report);
 						File.WriteAllBytes (report, stream.ToArray ());
+						if (!string.IsNullOrEmpty (Harness.MarkdownSummaryPath)) {
+							markdown_writer.Flush ();
+							if (File.Exists (Harness.MarkdownSummaryPath))
+								File.Delete (Harness.MarkdownSummaryPath);
+							File.WriteAllBytes (Harness.MarkdownSummaryPath, markdown_summary.ToArray ());
+							markdown_writer.Close ();
+						}
 					}
 				}
 			} catch (Exception e) {
@@ -1063,7 +1104,7 @@ namespace xharness
 			}
 		}
 
-		void GenerateReportImpl (Stream stream)
+		void GenerateReportImpl (Stream stream, StreamWriter markdown_summary = null)
 		{
 			var id_counter = 0;
 
@@ -1115,13 +1156,51 @@ namespace xharness
 				allTasks.AddRange (allDeviceTasks);
 			}
 
-			var failedTests = allTasks.Where ((v) => v.Failed);
+			var failedTests = allTasks.Where ((v) => v.Failed || v.Skipped);
 			var unfinishedTests = allTasks.Where ((v) => !v.Finished);
 			var passedTests = allTasks.Where ((v) => v.Succeeded);
 			var runningTests = allTasks.Where ((v) => v.Running && !v.Waiting);
 			var buildingTests = allTasks.Where ((v) => v.Building && !v.Waiting);
 			var runningQueuedTests = allTasks.Where ((v) => v.Running && v.Waiting);
 			var buildingQueuedTests = allTasks.Where ((v) => v.Building && v.Waiting);
+
+			if (markdown_summary != null) {
+				markdown_summary.WriteLine ("# Test results");
+				markdown_summary.WriteLine ();
+				if (allTasks.Count == 0) {
+					markdown_summary.WriteLine ($"Loading tests...");
+				} else if (unfinishedTests.Any ()) {
+					var list = new List<string> ();
+					var grouped = allTasks.GroupBy ((v) => v.ExecutionResult).OrderBy ((v) => (int) v.Key);
+					foreach (var @group in grouped)
+						list.Add ($"{@group.Key.ToString ()}: {@group.Count ()}");
+					markdown_summary.Write ($"# Test run in progress: ");
+					markdown_summary.Write (string.Join (", ", list));
+					markdown_summary.WriteLine ();
+				} else if (failedTests.Any ()) {
+					markdown_summary.WriteLine ($"{failedTests.Count ()} tests failed, {passedTests.Count ()} tests passed.");
+				} else if (passedTests.Any ()) {
+					markdown_summary.WriteLine ($"# All {passedTests.Count ()} tests passed");
+				} else {
+					markdown_summary.WriteLine ($"# No tests selected.");
+				}
+				markdown_summary.WriteLine ();
+				if (failedTests.Any ()) {
+					markdown_summary.WriteLine ("## Failed tests");
+					markdown_summary.WriteLine ();
+					foreach (var t in failedTests) {
+						markdown_summary.Write ($" * {t.TestName}");
+						if (!string.IsNullOrEmpty (t.Mode))
+							markdown_summary.Write ($"/{t.Mode}");
+						if (!string.IsNullOrEmpty (t.Variation))
+							markdown_summary.Write ($"/{t.Variation}");
+						markdown_summary.Write ($": {t.ExecutionResult}");
+						if (!string.IsNullOrEmpty (t.FailureMessage))
+							markdown_summary.Write ($" ({t.FailureMessage})");
+						markdown_summary.WriteLine ();
+					}
+				}
+			}
 
 			using (var writer = new StreamWriter (stream)) {
 				writer.WriteLine ("<!DOCTYPE html>");
@@ -1140,7 +1219,7 @@ namespace xharness
 
 #nav {
 	display: inline-block;
-	width: 300px;
+	width: 350px;
 }
 
 #nav > * {
@@ -1326,8 +1405,9 @@ function autorefresh()
 				if (new_obj) {
 					if (ar_obj.innerHTML != new_obj.innerHTML)
 						ar_obj.innerHTML = new_obj.innerHTML;
-					if (ar_obj.style != new_obj.style)
+					if (ar_obj.style.cssText != new_obj.style.cssText) {
 						ar_obj.style = new_obj.style;
+					}
 					
 					var evt = ar_obj.getAttribute ('data-onautorefresh');
 					if (evt != '') {
@@ -1458,6 +1538,12 @@ function oninitialload ()
 			<li class=""adminitem""><a href='javascript:toggleVisibility (""toggleable-ignored"");'>Ignored tests</a></li>
 		</ul>
 	</li>
+	<li>Reload
+		<ul>
+			<li class=""adminitem""><a href='javascript:sendrequest (""reload-devices"");'>Devices</a></li>
+			<li class=""adminitem""><a href='javascript:sendrequest (""reload-simulators"");'>Simulators</a></li>
+		</ul>
+	</li>
 </ul>");
 				}
 
@@ -1571,7 +1657,8 @@ function oninitialload ()
 							writer.Write ($"<div class='pdiv {ignoredClass}'>");
 							writer.Write ($"<span id='button_container2_{modeGroupId}' class='expander' onclick='javascript: toggleContainerVisibility2 (\"{modeGroupId}\");'>{defaultExpander}</span>");
 							writer.Write ($"<span id='x{id_counter++}' class='p2 autorefreshable' onclick='javascript: toggleContainerVisibility2 (\"{modeGroupId}\");'>{modeGroup.Key}{RenderTextStates (modeGroup)}</span>");
-							writer.Write ($" <span><a class='runall' href='javascript: runtest (\"{string.Join (",", modeGroup.Select ((v) => v.ID.ToString ()))}\");'>Run all</a></span>");
+							if (IsServerMode)
+								writer.Write ($" <span><a class='runall' href='javascript: runtest (\"{string.Join (",", modeGroup.Select ((v) => v.ID.ToString ()))}\");'>Run all</a></span>");
 							writer.WriteLine ("</div>");
 
 							writer.WriteLine ($"<div id='test_container2_{modeGroupId}' style='display: {defaultDisplay}; margin-left: 20px;'>");
@@ -1619,6 +1706,11 @@ function oninitialload ()
 								if (runTest.BuildTask.Duration.Ticks > 0) {
 									writer.WriteLine ($"Project file: {runTest.BuildTask.ProjectFile} <br />");
 									writer.WriteLine ($"Platform: {runTest.BuildTask.ProjectPlatform} Configuration: {runTest.BuildTask.ProjectConfiguration} <br />");
+									IEnumerable<IDevice> candidates = (runTest as RunDeviceTask)?.Candidates;
+									if (candidates == null)
+										candidates = (runTest as RunSimulatorTask)?.Candidates;
+									if (candidates != null)
+										writer.WriteLine ($"Candidate devices: {string.Join (", ", candidates.Select ((v) => v.Name))} <br />");
 									writer.WriteLine ($"Build duration: {runTest.BuildTask.Duration} <br />");
 								}
 								if (test.Duration.Ticks > 0)
@@ -1772,7 +1864,7 @@ function oninitialload ()
 		public Jenkins Jenkins;
 		public Harness Harness { get { return Jenkins.Harness; } }
 		public TestProject TestProject;
-		public string ProjectFile { get { return TestProject.Path; } }
+		public string ProjectFile { get { return TestProject?.Path; } }
 		public string ProjectConfiguration;
 		public string ProjectPlatform;
 		public Dictionary<string, string> Environment = new Dictionary<string, string> ();
@@ -1855,6 +1947,8 @@ function oninitialload ()
 					return test_name;
 				
 				var rv = Path.GetFileNameWithoutExtension (ProjectFile);
+				if (rv == null)
+					return $"unknown test name ({GetType ().Name}";
 				switch (Platform) {
 				case TestPlatform.Mac:
 				case TestPlatform.Mac_Classic:
@@ -1998,6 +2092,17 @@ function oninitialload ()
 				process.StartInfo.EnvironmentVariables ["XamarinMacFrameworkRoot"] = Path.Combine (Harness.MAC_DESTDIR, "Library", "Frameworks", "Xamarin.Mac.framework", "Versions", "Current");
 				process.StartInfo.EnvironmentVariables ["XAMMAC_FRAMEWORK_PATH"] = Path.Combine (Harness.MAC_DESTDIR, "Library", "Frameworks", "Xamarin.Mac.framework", "Versions", "Current");
 				break;
+			case TestPlatform.All:
+				// Don't set:
+				//     MSBuildExtensionsPath 
+				//     XBUILD_FRAMEWORK_FOLDERS_PATH
+				// because these values used by both XM and XI and we can't set it to two different values at the same time.
+				// Any test that depends on these values should not be using 'TestPlatform.All'
+				process.StartInfo.EnvironmentVariables ["MD_APPLE_SDK_ROOT"] = Harness.XcodeRoot;
+				process.StartInfo.EnvironmentVariables ["MD_MTOUCH_SDK_ROOT"] = Path.Combine (Harness.IOS_DESTDIR, "Library", "Frameworks", "Xamarin.iOS.framework", "Versions", "Current");
+				process.StartInfo.EnvironmentVariables ["XamarinMacFrameworkRoot"] = Path.Combine (Harness.MAC_DESTDIR, "Library", "Frameworks", "Xamarin.Mac.framework", "Versions", "Current");
+				process.StartInfo.EnvironmentVariables ["XAMMAC_FRAMEWORK_PATH"] = Path.Combine (Harness.MAC_DESTDIR, "Library", "Frameworks", "Xamarin.Mac.framework", "Versions", "Current");
+				break;
 			default:
 				throw new NotImplementedException ();
 			}
@@ -2039,6 +2144,25 @@ function oninitialload ()
 			foreach (string key in process.StartInfo.EnvironmentVariables.Keys)
 				log.WriteLine ("{0}={1}", key, process.StartInfo.EnvironmentVariables [key]);
 			log.WriteLine ("{0} {1}", process.StartInfo.FileName, process.StartInfo.Arguments);
+		}
+
+		public string GuessFailureReason (Log log)
+		{
+			try {
+				using (var reader = log.GetReader ()) {
+					string line;
+					var error_msg = new System.Text.RegularExpressions.Regex ("([A-Z][A-Z][0-9][0-9][0-9][0-9]:.*)");
+					while ((line = reader.ReadLine ()) != null) {
+						var match = error_msg.Match (line);
+						if (match.Success)
+							return match.Groups [1].Captures [0].Value;
+					}
+				}
+			} catch (Exception e) {
+				Harness.Log ("Failed to guess failure reason: {0}", e.Message);
+			}
+
+			return null;
 		}
 
 		// This method will set (and clear) the Waiting flag correctly while waiting on a resource
@@ -2723,7 +2847,7 @@ function oninitialload ()
 		}
 
 		public RunDeviceTask (XBuildTask build_task, IEnumerable<Device> candidates)
-			: base (build_task, candidates)
+			: base (build_task, candidates.OrderBy ((v) => v.DebugSpeed))
 		{
 			switch (build_task.Platform) {
 			case TestPlatform.iOS:
@@ -2751,6 +2875,7 @@ function oninitialload ()
 			Jenkins.MainLog.WriteLine ("Running '{0}' on device (candidates: '{1}')", ProjectFile, string.Join ("', '", Candidates.Select ((v) => v.Name).ToArray ()));
 
 			var install_log = Logs.CreateStream (LogDirectory, $"install-{Timestamp}.log", "Install log");
+			install_log.Timestamp = true;
 			var uninstall_log = Logs.CreateStream (LogDirectory, $"uninstall-{Timestamp}.log", "Uninstall log");
 			using (var device_resource = await NotifyBlockingWaitAsync (Jenkins.GetDeviceResources (Candidates).AcquireAnyConcurrentAsync ())) {
 				try {
@@ -2803,6 +2928,8 @@ function oninitialload ()
 
 						if (!string.IsNullOrEmpty (runner.FailureMessage))
 							FailureMessage = runner.FailureMessage;
+						else
+							FailureMessage = GuessFailureReason (runner.MainLog);
 
 						if (runner.Result == TestExecutingResult.Succeeded && Platform == TestPlatform.iOS_TodayExtension64) {
 							// For the today extension, the main app is just a single test.
@@ -2898,7 +3025,7 @@ function oninitialload ()
 			if (Platform == TestPlatform.watchOS)
 				CompanionDevice = Jenkins.Simulators.FindCompanionDevice (Jenkins.SimulatorLoadLog, Device);
 
-			var clean_state = false;//Platform == TestPlatform.tvOS;
+			var clean_state = false;//Platform == TestPlatform.watchOS;
 			runner = new AppRunner ()
 			{
 				Harness = Harness,
@@ -3176,6 +3303,8 @@ function oninitialload ()
 	public enum TestPlatform
 	{
 		None,
+		All,
+
 		iOS,
 		iOS_Unified,
 		iOS_Unified32,

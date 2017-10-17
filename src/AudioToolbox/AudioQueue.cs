@@ -262,7 +262,7 @@ namespace XamCore.AudioToolbox {
 	[StructLayout(LayoutKind.Explicit)]
 	public struct AudioQueueParameterEvent {
 		[FieldOffset(0)]
-		[Advice ("Use Parameter")] 
+		[Advice ("Use Parameter.")]
 		public uint ID;
 
 		[FieldOffset(0)] 
@@ -1477,7 +1477,7 @@ namespace XamCore.AudioToolbox {
 				gch = mygch;
 				return;
 			}
-			gch.Free ();
+			mygch.Free ();
 			throw new AudioQueueException (code);
 		}
 
