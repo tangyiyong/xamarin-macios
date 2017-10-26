@@ -557,7 +557,7 @@ namespace xharness
 					if (project.GenerateVariations) {
 						Tasks.Add (CloneExecuteTask (exec, TestPlatform.Mac_Unified, "-unified", ignored));
 						Tasks.Add (CloneExecuteTask (exec, TestPlatform.Mac_Unified32, "-unified-32", ignored));
-						if (!project.SkipXMVariations) {
+						if (project.GenerateFull) {
 							Tasks.Add (CloneExecuteTask (exec, TestPlatform.Mac_UnifiedXM45, "-unifiedXM45", ignored));
 							Tasks.Add (CloneExecuteTask (exec, TestPlatform.Mac_UnifiedXM45_32, "-unifiedXM45-32", ignored));
 						}
@@ -3130,16 +3130,17 @@ function oninitialload ()
 				// We need to set the dialog permissions for all the apps
 				// before launching the simulator, because once launched
 				// the simulator caches the values in-memory.
-				foreach (var task in Tasks)
+				var executingTasks = Tasks.Where ((v) => !v.Ignored && !v.Failed);
+				foreach (var task in executingTasks)
 					await task.SelectSimulatorAsync ();
 
-				var devices = Tasks.First ().Simulators;
+				var devices = executingTasks.First ().Simulators;
 				Jenkins.MainLog.WriteLine ("Selected simulator: {0}", devices.Length > 0 ? devices [0].Name : "none");
 
 				foreach (var dev in devices)
-					await dev.PrepareSimulatorAsync (Jenkins.MainLog, Tasks.Where ((v) => !v.Ignored && !v.Failed).Select ((v) => v.BundleIdentifier).ToArray ());
+					await dev.PrepareSimulatorAsync (Jenkins.MainLog, executingTasks.Select ((v) => v.BundleIdentifier).ToArray ());
 
-				foreach (var task in Tasks) {
+				foreach (var task in executingTasks) {
 					task.AcquiredResource = desktop;
 					try {
 						await task.RunAsync ();
