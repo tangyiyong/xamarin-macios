@@ -182,9 +182,9 @@ namespace xharness
 			return rv;
 		}
 
-		public LogFile CreateFile (string description, string path)
+		public LogFile CreateFile (string description, string path, bool append = true)
 		{
-			var rv = new LogFile (description, path);
+			var rv = new LogFile (description, path, append);
 			Add (rv);
 			return rv;
 		}
