@@ -38,6 +38,7 @@ namespace Xamarin.Bundler {
 		public string FrameworkDirectory { get; set; }
 		public string RootDirectory { get; set; }
 		public string ArchDirectory { get; set; }
+		public List<string> ExtraSearchDirectories { get; } = new List<string> ();
 
 		public List <string> CommandLineAssemblies { get; set; }
 		public List<Exception> Exceptions = new List<Exception> ();
@@ -141,25 +142,31 @@ namespace Xamarin.Bundler {
 			if (assembly != null)
 				return assembly;
 
-			return null;
-		}
-
-		AssemblyDefinition SearchDirectory (string name, string directory)
-		{
-			var file = DirectoryGetFile (directory, name + ".dll");
-			if (file.Length > 0)
-				return AddAssembly (file);
-
-			file = DirectoryGetFile (directory, name + ".exe");
-			if (file.Length > 0)
-				return AddAssembly (file);
+			foreach (var directory in ExtraSearchDirectories) {
+				assembly = SearchDirectory (name, directory, true);
+				if (assembly != null)
+					return assembly;
+			}
 
 			return null;
 		}
 
-		static string DirectoryGetFile (string directory, string file)
+		AssemblyDefinition SearchDirectory (string name, string directory, bool recursive = false)
 		{
-			var files = Directory.GetFiles (directory, file);
+			var file = DirectoryGetFile (directory, name + ".dll", recursive);
+			if (file.Length > 0)
+				return AddAssembly (file);
+
+			file = DirectoryGetFile (directory, name + ".exe", recursive);
+			if (file.Length > 0)
+				return AddAssembly (file);
+
+			return null;
+		}
+
+		static string DirectoryGetFile (string directory, string file, bool recursive)
+		{
+			var files = Directory.GetFiles (directory, file, recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
 			if (files != null && files.Length > 0)
 				return files [0];
 
