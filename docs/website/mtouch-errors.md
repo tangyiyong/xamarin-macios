@@ -629,6 +629,14 @@ A failure occurred when touching a file (which is done to ensure partial builds 
 
 This warning can most likely be ignored; in case of any problems file a bug (https://bugzilla.xamarin.com](https://bugzilla.xamarin.com/enter_bug.cgi?product=iOS)) and it will be investigated.
 
+### <a name="MT0129"/>MT0129: No assemblies found. You should provide at least one assembly.
+
+When running --runregistrar, at least one assembly should be provided.
+
+### <a name="MT0130"/>MT0130: Product assembly '{0}' not found in assembly list: '{1}'
+
+When running --runregistrar, the assembly list should include the product assembly, Xamarin.iOS, Xamarin.WatchOS, Xamarin.TVOS.
+
 # MT1xxx: Project related error messages
 
 ### MT10xx: Installer / mtouch

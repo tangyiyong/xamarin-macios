@@ -92,6 +92,15 @@ A last-straw solution would be to use an older version of Xamarin.Mac, one that 
 
 ### <a name="MM0114">MM0114: Hybrid AOT compilation requires all assemblies to be AOT compiled.
 
+### <a name="MM0129"/>MM0129: No assemblies found. You should provide at least one assembly.
+
+When running --runregistrar, at least one assembly should be provided.
+
+### <a name="MM0130"/>MM0130: Product assembly '{0}' not found in assembly list: '{1}'
+
+When running --runregistrar, the assembly list should include the product assembly, Xamarin.Mac, XamMac.
+
+
 # MM1xxx: file copy / symlinks (project related)
 
 ### <a name="MM1034">MM1034: Could not create symlink '{file}' -> '{target}': error {number}
